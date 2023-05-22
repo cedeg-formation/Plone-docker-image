@@ -1,0 +1,8 @@
+version: '3'
+services:
+  plone:
+    image: plone
+    ports:
+      - 8080:8080
+    volumes:
+      - ./data:/data
