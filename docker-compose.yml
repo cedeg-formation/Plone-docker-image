@@ -1,0 +1,20 @@
+version: "3"
+services:
+
+  backend:
+    image: plone/plone-backend:6.0
+    environment:
+      RELSTORAGE_DSN: "dbname='plone' user='plone' host='db' password='plone'"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  db:
+    image: postgres
+    environment:
+      POSTGRES_USER: plone
+      POSTGRES_PASSWORD: plone
+      POSTGRES_DB: plone
+    ports:
+      - "5432:5432"
