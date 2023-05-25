@@ -1,44 +1,50 @@
-# Utilisez une image de base avec Python et Ubuntu
 FROM python:3.7-slim-buster
 
-# Définition des variables d'environnement
-ENV PLONE_VERSION=5.2.4
-ENV PLONE_MD5=93a74a3bc69701e41339d003ee74ef4c
-ENV PLONE_HOME=/plone
+ENV PIP=21.0.1 \
+    ZC_BUILDOUT=2.13.4 \
+    SETUPTOOLS=51.3.3 \
+    WHEEL=0.36.2 \
+    PLONE_MAJOR=5.2 \
+    PLONE_VERSION=5.2.4 \
+    PLONE_VERSION_RELEASE=Plone-5.2.4-UnifiedInstaller-1.0 \
+    PLONE_MD5=b682cdf2384e692c033077f448b68afd
 
-# Installation des dépendances système
-RUN apt-get update && apt-get install -y \
-    libssl-dev \
-    libjpeg-dev \
-    zlib1g-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    git \
-    libldap2-dev \
-    libsasl2-dev \
-    build-essential \
-    libssl-dev \
-    libreadline-dev \
-    libbz2-dev \
-    libsqlite3-dev \
-    libffi-dev \
-    curl \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+RUN useradd --system -m -d /plone -U -u 500 plone \
+ && mkdir -p /plone/instance/ /data/filestorage /data/blobstorage
 
-# Téléchargement et installation de Plone
-RUN mkdir -p $PLONE_HOME \
-    && curl -o plone.tgz https://launchpad.net/plone/$PLONE_VERSION/$PLONE_VERSION/+download/Plone-$PLONE_VERSION-UnifiedInstaller.tgz \
-    && echo "$PLONE_MD5  plone.tgz" | md5sum -c - \
-    && tar -xzf plone.tgz -C $PLONE_HOME \
-    && rm plone.tgz
+COPY buildout.cfg /plone/instance/
 
-# Installation de Plone en utilisant l'installateur unifié
-WORKDIR $PLONE_HOME/Plone-$PLONE_VERSION-UnifiedInstaller
-RUN ./install.sh --password=admin standalone
+RUN buildDeps="default-libmysqlclient-dev dpkg-dev gcc libbz2-dev libc6-dev libffi-dev libjpeg62-turbo-dev libldap2-dev libopenjp2-7-dev libpcre3-dev libpq-dev libsasl2-dev libssl-dev libtiff5-dev libxml2-dev libxslt1-dev wget zlib1g-dev" \
+ && runDeps="default-libmysqlclient-dev git gosu libjpeg62 libopenjp2-7 libpq5 libtiff5 libxml2 libxslt1.1 lynx netcat poppler-utils rsync wv" \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends $buildDeps \
+ && wget -O Plone.tgz https://launchpad.net/plone/$PLONE_MAJOR/$PLONE_VERSION/+download/$PLONE_VERSION_RELEASE.tgz \
+ && echo "$PLONE_MD5 Plone.tgz" | md5sum -c - \
+ && tar -xzf Plone.tgz \
+ && cp -rv ./$PLONE_VERSION_RELEASE/base_skeleton/* /plone/instance/ \
+ && cp -v ./$PLONE_VERSION_RELEASE/buildout_templates/buildout.cfg /plone/instance/buildout-base.cfg \
+ && pip install pip==$PIP setuptools==$SETUPTOOLS zc.buildout==$ZC_BUILDOUT wheel==$WHEEL \
+ && cd /plone/instance \
+ && buildout \
+ && ln -s /data/filestorage/ /plone/instance/var/filestorage \
+ && ln -s /data/blobstorage /plone/instance/var/blobstorage \
+ && find /data  -not -user plone -exec chown plone:plone {} \+ \
+ && find /plone -not -user plone -exec chown plone:plone {} \+ \
+ && rm -rf /Plone* \
+ && apt-get purge -y --auto-remove $buildDeps \
+ && apt-get install -y --no-install-recommends $runDeps \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /plone/buildout-cache/downloads/*
 
-# Exposition du port HTTP de Plone
+VOLUME /data
+
+COPY docker-initialize.py docker-entrypoint.sh /
+
 EXPOSE 8080
+WORKDIR /plone/instance
 
-# Lancement de Plone
-CMD ["$PLONE_HOME/zinstance/bin/zeoserver", "start"]
+HEALTHCHECK --interval=1m --timeout=5s --start-period=1m \
+  CMD nc -z -w5 127.0.0.1 8080 || exit 1
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["start"]
