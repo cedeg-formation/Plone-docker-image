@@ -1,8 +1,26 @@
 version: '3'
+
 services:
   plone:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: plone
     ports:
       - 8080:8080
+    volumes:
+      - ./data:/data
+    environment:
+      - SITE=Plone
+      - ADDONS=plone.restapi
+      - ZCML=plone.restapi.overrides
+    depends_on:
+      - zeoserver
+
+  zeoserver:
+    image: plone
+    command: zeoserver
+    volumes:
+      - ./data:/data
+    environment:
+      - ZEO_STORAGE=/data/zeostorage
+
+volumes:
+  data:
