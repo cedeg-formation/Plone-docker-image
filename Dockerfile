@@ -1,5 +1,15 @@
-FROM plone/plone-backend:6.0
+FROM python:3.8
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc \
-    && rm -rf /var/lib/apt/lists/*
+# Installation de Plone
+RUN pip install plone
+
+# Configuration de Plone
+RUN plone-standalone create --target=/plone --password=admin
+
+WORKDIR /plone/instance
+
+# Exposition du port de Plone
+EXPOSE 8080
+
+# Commande pour démarrer Plone
+CMD ["bin/instance", "start"]
