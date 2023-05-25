@@ -1,46 +1,50 @@
-FROM python:2.7
+FROM python:3.7-slim-buster
 
-RUN apt-get update && apt-get install -y \
-    libjpeg-dev \
-    libxml2-dev \
-    libxslt1-dev \
-    libbz2-dev \
-    zlib1g-dev \
-    libreadline-gplv2-dev \
-    libssl-dev \
-    libsqlite3-dev \
-    build-essential \
-    libmysqlclient-dev \
-    libpq-dev \
-    libev-dev \
-    libffi-dev \
-    libldap2-dev \
-    libsasl2-dev \
-    libldap2-dev \
-    libssl-dev \
-    libsnmp-dev \
-    libjpeg62-turbo-dev \
-    libfreetype6-dev \
-    liblcms2-dev \
-    libopenjp2-7-dev \
-    tcl-dev \
-    tk-dev \
-    wget \
-    git \
-    curl
+ENV PIP=22.2.2 \
+    ZC_BUILDOUT=2.13.7 \
+    SETUPTOOLS=51.3.3 \
+    WHEEL=0.37.1 \
+    PLONE_MAJOR=5.2 \
+    PLONE_VERSION=5.2.9 \
+    PLONE_VERSION_RELEASE=Plone-5.2.9-UnifiedInstaller-1.0 \
+    PLONE_MD5=fe4bac71688e9704a21f7877680f1374
 
-RUN useradd -ms /bin/bash -d /opt/plone plone
-WORKDIR /opt/plone
+RUN useradd --system -m -d /plone -U -u 500 plone \
+ && mkdir -p /plone/instance/ /data/filestorage /data/blobstorage
 
-USER plone
+COPY buildout.cfg /plone/instance/
 
-RUN curl https://launchpad.net/plone/5.2/5.2.4/+download/Plone-5.2.4-UnifiedInstaller.tgz -o Plone-5.2.4-UnifiedInstaller.tgz && \
-    tar -xvzf Plone-5.2.4-UnifiedInstaller.tgz && \
-    cd Plone-5.2.4-UnifiedInstaller && \
-    ./install.sh standalone --target=/opt/plone/zeocluster
+RUN buildDeps="default-libmysqlclient-dev dpkg-dev gcc libbz2-dev libc6-dev libffi-dev libjpeg62-turbo-dev libldap2-dev libopenjp2-7-dev libpcre3-dev libpq-dev libsasl2-dev libssl-dev libtiff5-dev libxml2-dev libxslt1-dev wget zlib1g-dev" \
+ && runDeps="default-libmysqlclient-dev git gosu libjpeg62 libopenjp2-7 libpq5 libtiff5 libxml2 libxslt1.1 lynx netcat poppler-utils rsync wv" \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends $buildDeps \
+ && wget -O Plone.tgz https://launchpad.net/plone/$PLONE_MAJOR/$PLONE_VERSION/+download/$PLONE_VERSION_RELEASE.tgz \
+ && echo "$PLONE_MD5 Plone.tgz" | md5sum -c - \
+ && tar -xzf Plone.tgz \
+ && cp -rv ./$PLONE_VERSION_RELEASE/base_skeleton/* /plone/instance/ \
+ && cp -v ./$PLONE_VERSION_RELEASE/buildout_templates/buildout.cfg /plone/instance/buildout-base.cfg \
+ && pip install pip==$PIP setuptools==$SETUPTOOLS zc.buildout==$ZC_BUILDOUT wheel==$WHEEL \
+ && cd /plone/instance \
+ && buildout \
+ && ln -s /data/filestorage/ /plone/instance/var/filestorage \
+ && ln -s /data/blobstorage /plone/instance/var/blobstorage \
+ && find /data  -not -user plone -exec chown plone:plone {} \+ \
+ && find /plone -not -user plone -exec chown plone:plone {} \+ \
+ && rm -rf /Plone* \
+ && apt-get purge -y --auto-remove $buildDeps \
+ && apt-get install -y --no-install-recommends $runDeps \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -rf /plone/buildout-cache/downloads/*
 
-WORKDIR /opt/plone/zeocluster
+VOLUME /data
+
+COPY docker-initialize.py docker-entrypoint.sh /
 
 EXPOSE 8080
+WORKDIR /plone/instance
 
-CMD ["bin/zeoserver", "start"]
+HEALTHCHECK --interval=1m --timeout=5s --start-period=1m \
+  CMD nc -z -w5 127.0.0.1 8080 || exit 1
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["start"]
